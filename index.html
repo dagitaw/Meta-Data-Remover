@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles/styles.css">
+    <title>Meta Data Remover</title>
+</head>
+<body>
+    <h1>Meta Data Remover</h1>
+    
+    <button id="chooseFileButton">Choose File</button>
+    <p id="inputInfo">no file selected</p>
+
+    <button id="chooseOutputButton">Choose Output Folder (optional)</button>
+    <p id="outputInfo">no output folder selected</p>
+
+    <input type="text" id="outputFileName" placeholder="Enter output file name (optional)">
+    
+    <button id="removeMetaDataButton">Remove Meta Data</button>
+
+    <div id="alertOverlay" class="alert-overlay">
+        <div class="alert-window">
+            <div id="alertIcon" class="alert-icon">✓</div>
+
+            <h2 id="alertTitle">Success</h2>
+
+            <p id="alertMessage">Metadata removed successfully.</p>
+
+            <button id="alertCloseButton">OK</button>
+        </div>
+    </div>
+        
+    <script src="scripts/scripts.js"></script>
+
+</body>
+</html>

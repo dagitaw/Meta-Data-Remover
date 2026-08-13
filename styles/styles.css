@@ -1,0 +1,362 @@
+/* ================================
+   GLOBAL
+================================ */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    background:
+        radial-gradient(circle at top left, rgba(82, 112, 255, 0.12), transparent 35%),
+        radial-gradient(circle at bottom right, rgba(70, 130, 255, 0.08), transparent 35%),
+        #121014;
+
+    color: #edf2ff;
+    font-family: "Segoe UI", Arial, sans-serif;
+    padding: 30px;
+}
+
+
+/* ================================
+   MAIN CONTAINER
+================================ */
+
+body::before {
+    content: "";
+    position: absolute;
+    width: 420px;
+    height: 420px;
+    background: rgba(82, 112, 255, 0.08);
+    filter: blur(100px);
+    border-radius: 50%;
+    z-index: -1;
+}
+
+
+/* ================================
+   TITLE
+================================ */
+
+h1 {
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin-bottom: 35px;
+
+    background: linear-gradient(
+        135deg,
+        #ffffff,
+        #aebdff
+    );
+
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+
+/* ================================
+   BUTTONS
+================================ */
+
+button {
+    width: 360px;
+    height: 48px;
+
+    border: 1px solid rgba(140, 160, 255, 0.15);
+    border-radius: 10px;
+
+    background: #18181d;
+    color: #edf2ff;
+
+    font-size: 14px;
+    font-weight: 500;
+
+    cursor: pointer;
+
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.15s ease,
+        box-shadow 0.2s ease;
+}
+
+button:hover {
+    background: #1d1e27;
+    border-color: rgba(82, 112, 255, 0.45);
+
+    box-shadow:
+        0 0 20px rgba(82, 112, 255, 0.12);
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+
+/* ================================
+   PRIMARY BUTTON
+================================ */
+
+#removeMetaDataButton {
+    margin-top: 28px;
+
+    background: linear-gradient(
+        135deg,
+        #5170ff,
+        #6f8aff
+    );
+
+    border: none;
+
+    color: white;
+    font-weight: 600;
+
+    box-shadow:
+        0 8px 25px rgba(81, 112, 255, 0.18);
+}
+
+#removeMetaDataButton:hover {
+    background: linear-gradient(
+        135deg,
+        #607cff,
+        #7d96ff
+    );
+
+    box-shadow:
+        0 10px 30px rgba(81, 112, 255, 0.28);
+}
+
+
+/* ================================
+   INFORMATION TEXT
+================================ */
+
+p {
+    width: 360px;
+
+    margin-top: 9px;
+    margin-bottom: 22px;
+
+    padding-left: 3px;
+
+    color: #858b9f;
+
+    font-size: 12px;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+
+/* ================================
+   INPUT
+================================ */
+
+#outputFileName {
+    width: 360px;
+    height: 48px;
+
+    margin-top: 2px;
+    padding: 0 15px;
+
+    border-radius: 10px;
+    border: 1px solid #2a2d38;
+
+    outline: none;
+
+    background: #18191e;
+    color: #edf2ff;
+
+    font-size: 14px;
+
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
+}
+
+#outputFileName::placeholder {
+    color: #6e7485;
+}
+
+#outputFileName:focus {
+    background: #1b1c23;
+
+    border-color: #5170ff;
+
+    box-shadow:
+        0 0 0 3px rgba(81, 112, 255, 0.10);
+}
+
+
+/* ================================
+   SPACING
+================================ */
+
+#chooseFileButton {
+    margin-bottom: 0;
+}
+
+#chooseOutputButton {
+    margin-top: 2px;
+}
+
+
+/* ================================
+   SELECTION
+================================ */
+
+::selection {
+    background: #5170ff;
+    color: white;
+}
+
+
+/* ================================
+   CUSTOM ALERT
+================================ */
+
+.alert-overlay {
+    position: fixed;
+    inset: 0;
+
+    display: none;
+    align-items: center;
+    justify-content: center;
+
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+
+    z-index: 9999;
+}
+
+.alert-overlay.show {
+    display: flex;
+}
+
+.alert-window {
+    width: 360px;
+
+    padding: 28px;
+
+    border: 1px solid rgba(140, 160, 255, 0.14);
+    border-radius: 16px;
+
+    background: #18191e;
+
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        0 0 30px rgba(81, 112, 255, 0.08);
+
+    text-align: center;
+
+    animation: alertAppear 0.2s ease-out;
+}
+
+@keyframes alertAppear {
+    from {
+        opacity: 0;
+        transform: scale(0.94) translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.alert-icon {
+    width: 52px;
+    height: 52px;
+
+    margin: 0 auto 16px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 50%;
+
+    background: rgba(81, 112, 255, 0.12);
+    border: 1px solid rgba(81, 112, 255, 0.25);
+
+    color: #7f96ff;
+
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.alert-window h2 {
+    margin-bottom: 8px;
+
+    color: #edf2ff;
+
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.alert-window p {
+    width: auto;
+
+    margin: 0 auto 22px;
+
+    color: #898fa1;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    white-space: normal;
+    overflow: visible;
+}
+
+#alertCloseButton {
+    width: 100%;
+    height: 44px;
+
+    margin: 0;
+
+    border: none;
+    border-radius: 9px;
+
+    background: linear-gradient(
+        135deg,
+        #5170ff,
+        #6f8aff
+    );
+
+    color: white;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    cursor: pointer;
+
+    transition:
+        transform 0.15s ease,
+        box-shadow 0.2s ease;
+}
+
+#alertCloseButton:hover {
+    box-shadow:
+        0 8px 22px rgba(81, 112, 255, 0.25);
+}
+
+#alertCloseButton:active {
+    transform: scale(0.98);
+}
+
+.alert-icon.error {
+    background: rgba(82, 112, 255, 0.12);
+    border-color: rgba(82, 112, 255, 0.25);
+    color: #7f96ff;
+}
