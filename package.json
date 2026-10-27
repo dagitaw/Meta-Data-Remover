@@ -21,6 +21,15 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "index.js",
+      "preload.js",
+      "index.html",
+      "scripts/**/*",
+      "styles/**/*",
+      "services/**/*",
+      "assets/**/*"
+    ],
     "extraResources": [
       {
         "from": "bin",

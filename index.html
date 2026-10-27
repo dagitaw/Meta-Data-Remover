@@ -3,35 +3,242 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; img-src 'self' file: data:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
     <link rel="stylesheet" href="styles/styles.css">
-    <title>Meta Data Remover</title>
+    <title>Metadata Remover</title>
 </head>
 <body>
-    <h1>Meta Data Remover</h1>
-    
-    <button id="chooseFileButton">Choose File</button>
-    <p id="inputInfo">no file selected</p>
+<div class="app">
 
-    <button id="chooseOutputButton">Choose Output Folder (optional)</button>
-    <p id="outputInfo">no output folder selected</p>
+    <!-- ============ TOP BAR ============ -->
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6-3.5-3.5 1.4-1.4 2.1 2.1 4.6-4.6 1.4 1.4-6 6Z"/></svg>
+            </span>
+            <span class="brand-name">Metadata Remover</span>
+        </div>
 
-    <input type="text" id="outputFileName" placeholder="Enter output file name (optional)">
-    
-    <button id="removeMetaDataButton">Remove Meta Data</button>
+        <div class="segmented mode-switch" role="tablist" id="modeSwitch">
+            <button type="button" role="tab" data-mode="clean" class="active">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6-3.5-3.5 1.4-1.4 2.1 2.1 4.6-4.6 1.4 1.4-6 6Z"/></svg>
+                Remove metadata
+            </button>
+            <button type="button" role="tab" data-mode="convert">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z"/></svg>
+                Convert files
+            </button>
+        </div>
 
-    <div id="alertOverlay" class="alert-overlay">
-        <div class="alert-window">
-            <div id="alertIcon" class="alert-icon">✓</div>
+        <div class="topbar-actions">
+            <button id="addFilesButton" class="btn btn-secondary btn-sm hidden" type="button">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+                Add files
+            </button>
+        </div>
+    </header>
 
-            <h2 id="alertTitle">Success</h2>
+    <main class="main">
 
-            <p id="alertMessage">Metadata removed successfully.</p>
+        <!-- ============ EMPTY STATE (YouTube-style upload) ============ -->
+        <section id="emptyState" class="upload-hero">
+            <div id="heroDropTarget" class="upload-target" role="button" tabindex="0" aria-label="Select files">
+                <div class="upload-circle">
+                    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true">
+                        <path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16-5.5 5.5 1.42 1.41L11 7.83V16h2V7.83l3.08 3.08 1.42-1.41L12 4Z"/>
+                    </svg>
+                </div>
+                <h1 id="heroTitle">Drag and drop files to upload</h1>
+                <p id="heroSubtitle">Videos, images and audio. Everything is processed on this computer — nothing leaves it.</p>
+            </div>
 
-            <button id="alertCloseButton">OK</button>
+            <button id="selectFilesButton" class="btn btn-primary btn-lg" type="button">Select files</button>
+
+            <p class="hero-formats">MP4 · MOV · MKV · WEBM · AVI · JPG · PNG · WEBP · AVIF · HEIC · GIF · MP3 · WAV …</p>
+        </section>
+
+        <!-- ============ WORKSPACE ============ -->
+        <section id="workspace" class="workspace hidden">
+
+            <!-- Queue -->
+            <div class="queue">
+                <div class="queue-header">
+                    <div>
+                        <h2>Files</h2>
+                        <span id="queueSummary" class="muted">0 files</span>
+                    </div>
+                    <button id="clearButton" class="btn btn-text btn-sm" type="button">Clear all</button>
+                </div>
+
+                <ul id="queueList" class="queue-list"></ul>
+
+                <button id="dropMoreButton" class="drop-more" type="button">
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16-5.5 5.5 1.42 1.41L11 7.83V16h2V7.83l3.08 3.08 1.42-1.41L12 4Z"/></svg>
+                    Drop more files here or click to browse
+                </button>
+            </div>
+
+            <!-- Settings panel -->
+            <aside class="panel">
+                <div class="panel-scroll">
+                    <fieldset id="settingsFieldset" class="settings-fieldset">
+
+                        <p id="modeDescription" class="mode-description"></p>
+
+                        <!-- CONVERT SETTINGS -->
+                        <div id="convertSettings" class="hidden">
+
+                            <section id="videoGroup" class="group">
+                                <h3 class="group-title"><span class="dot dot-video"></span>Video</h3>
+
+                                <label class="field">
+                                    <span class="label">Format</span>
+                                    <select id="videoFormat"></select>
+                                </label>
+
+                                <label class="field" id="videoCodecField">
+                                    <span class="label">Codec</span>
+                                    <select id="videoCodec"></select>
+                                    <small id="videoCodecHint" class="hint"></small>
+                                </label>
+
+                                <div class="field">
+                                    <span class="label">Quality</span>
+                                    <div class="segmented segmented-sm" id="videoQuality">
+                                        <button type="button" data-value="high">High</button>
+                                        <button type="button" data-value="balanced">Balanced</button>
+                                        <button type="button" data-value="small">Smaller file</button>
+                                    </div>
+                                </div>
+
+                                <div class="field-row" id="videoPictureRow">
+                                    <label class="field">
+                                        <span class="label">Resolution</span>
+                                        <select id="videoResolution"></select>
+                                    </label>
+                                    <label class="field">
+                                        <span class="label">Frame rate</span>
+                                        <select id="videoFps"></select>
+                                    </label>
+                                </div>
+
+                                <label class="field" id="videoAudioField">
+                                    <span class="label">Audio</span>
+                                    <select id="videoAudio">
+                                        <option value="keep">Keep audio</option>
+                                        <option value="remove">Remove audio</option>
+                                    </select>
+                                </label>
+                            </section>
+
+                            <section id="imageGroup" class="group">
+                                <h3 class="group-title"><span class="dot dot-image"></span>Image</h3>
+
+                                <label class="field">
+                                    <span class="label">Format</span>
+                                    <select id="imageFormat"></select>
+                                </label>
+
+                                <div class="field" id="imageQualityField">
+                                    <span class="label">Quality <output id="imageQualityValue">85</output></span>
+                                    <input type="range" id="imageQuality" min="1" max="100" value="85">
+                                </div>
+                                <small id="imageQualityNote" class="hint hidden">Lossless format — quality setting not needed.</small>
+
+                                <label class="field">
+                                    <span class="label">Max size (longest side)</span>
+                                    <select id="imageSize"></select>
+                                </label>
+                            </section>
+
+                            <section id="audioGroup" class="group">
+                                <h3 class="group-title"><span class="dot dot-audio"></span>Audio files</h3>
+
+                                <label class="field">
+                                    <span class="label">Format</span>
+                                    <select id="audioFormat"></select>
+                                </label>
+
+                                <div class="field">
+                                    <span class="label">Quality</span>
+                                    <div class="segmented segmented-sm" id="audioQuality">
+                                        <button type="button" data-value="high">High</button>
+                                        <button type="button" data-value="balanced">Balanced</button>
+                                        <button type="button" data-value="small">Smaller file</button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <label class="toggle">
+                                <input type="checkbox" id="stripMetadata" checked>
+                                <span class="switch" aria-hidden="true"></span>
+                                <span>Remove metadata while converting</span>
+                            </label>
+                        </div>
+
+                        <!-- OUTPUT -->
+                        <section class="group">
+                            <h3 class="group-title">Output</h3>
+
+                            <div class="field">
+                                <span class="label">Save to</span>
+                                <div class="folder-picker">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z"/></svg>
+                                    <span id="outputFolderLabel" class="folder-label">Same folder as original</span>
+                                    <button id="resetOutputButton" class="icon-btn hidden" type="button" title="Use original folder">
+                                        <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+                                    </button>
+                                    <button id="chooseOutputButton" class="btn btn-secondary btn-xs" type="button">Change</button>
+                                </div>
+                            </div>
+
+                            <label class="field" id="fileNameField">
+                                <span class="label">File name</span>
+                                <input type="text" id="outputFileName" placeholder="Optional" spellcheck="false">
+                                <small id="fileNameHint" class="hint"></small>
+                            </label>
+                        </section>
+                    </fieldset>
+                    <p id="engineInfo" class="engine-info"></p>
+                </div>
+
+                <div class="panel-footer">
+                    <button id="startButton" class="btn btn-primary btn-block" type="button">Remove metadata</button>
+                    <button id="cancelButton" class="btn btn-secondary btn-block hidden" type="button">Cancel</button>
+                </div>
+            </aside>
+        </section>
+    </main>
+</div>
+
+<!-- ============ FULL-WINDOW DROP OVERLAY ============ -->
+<div id="dropOverlay" class="drop-overlay" aria-hidden="true">
+    <div class="drop-overlay-inner">
+        <div class="upload-circle pulse">
+            <svg viewBox="0 0 24 24" width="56" height="56"><path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16-5.5 5.5 1.42 1.41L11 7.83V16h2V7.83l3.08 3.08 1.42-1.41L12 4Z"/></svg>
+        </div>
+        <h2>Drop files to add them</h2>
+        <p>Videos, images, audio — or whole folders</p>
+    </div>
+</div>
+
+<!-- ============ RESULT DIALOG ============ -->
+<div id="alertOverlay" class="alert-overlay">
+    <div class="alert-window" role="dialog" aria-modal="true" aria-labelledby="alertTitle">
+        <div id="alertIcon" class="alert-icon">✓</div>
+        <h2 id="alertTitle">Done</h2>
+        <p id="alertMessage"></p>
+        <div class="alert-actions">
+            <button id="alertOpenButton" class="btn btn-secondary" type="button">Show in folder</button>
+            <button id="alertCloseButton" class="btn btn-primary" type="button">OK</button>
         </div>
     </div>
-        
-    <script src="scripts/scripts.js"></script>
+</div>
 
+<!-- ============ TOAST ============ -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="scripts/main.js"></script>
 </body>
 </html>

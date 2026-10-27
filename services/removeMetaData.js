@@ -1,238 +1,178 @@
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
-const { app } = require('electron');
+const { getBinPath, getMediaType, buildOutputPath, releaseOutputPath } = require('./fileUtils');
+const { runFfmpeg } = require('./ffmpeg');
 
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.avif', '.heic', '.heif']);
-const VIDEO_AUDIO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.mpeg', '.mpg', '.3gp', '.mp3', '.wav', '.m4a', '.flac']);
+/* ------------------------------------------------------------------ */
+/* Image format detection                                              */
+/* ------------------------------------------------------------------ */
 
-function getBinPath(binaryName) {
-    const isDev = !app.isPackaged;
-    return isDev
-        ? path.join(__dirname, '..', 'bin', binaryName)
-        : path.join(process.resourcesPath, 'bin', binaryName);
+// ISO-BMFF brands (the "ftyp" box) used by HEIC/HEIF/AVIF files.
+const AVIF_BRANDS = new Set(['avif', 'avis']);
+const HEIC_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs']);
+const HEIF_BRANDS = new Set(['mif1', 'msf1']);
+
+/**
+ * Work out an image's real format from its first bytes (files are often
+ * mis-labelled, e.g. a WebP saved as .jpg). Returns an extension or null.
+ * Much faster than asking ExifTool, which means starting Perl.
+ */
+async function sniffImageExtension(filePath) {
+    const handle = await fs.promises.open(filePath, 'r');
+    let header;
+    try {
+        header = Buffer.alloc(64);
+        const { bytesRead } = await handle.read(header, 0, 64, 0);
+        header = header.subarray(0, bytesRead);
+    } finally {
+        await handle.close();
+    }
+
+    const ascii = (start, end) => header.toString('latin1', start, end);
+
+    if (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) return '.jpg';
+    if (header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return '.png';
+    if (ascii(0, 4) === 'GIF8') return '.gif';
+    if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return '.webp';
+    if (ascii(0, 2) === 'BM') return '.bmp';
+    if (ascii(0, 4) === 'II*\0' || ascii(0, 4) === 'MM\0*') return '.tiff';
+
+    if (ascii(4, 8) === 'ftyp') {
+        const boxSize = Math.min(header.readUInt32BE(0), header.length);
+        const brands = [ascii(8, 12)];
+        for (let i = 16; i + 4 <= boxSize; i += 4) brands.push(ascii(i, i + 4));
+
+        if (brands.some((b) => AVIF_BRANDS.has(b))) return '.avif';
+        if (brands.some((b) => HEIC_BRANDS.has(b))) return '.heic';
+        if (brands.some((b) => HEIF_BRANDS.has(b))) return '.heif';
+    }
+
+    return null;
 }
 
-function removeMetaData(filePath, outputFolder, outputFileName) {
+/* ------------------------------------------------------------------ */
+/* ExifTool                                                            */
+/* ------------------------------------------------------------------ */
+
+// ExifTool's FileType -> extension (only used when sniffing fails).
+const EXIFTOOL_TYPE_TO_EXTENSION = {
+    jpeg: '.jpg', jpg: '.jpg', png: '.png', webp: '.webp', gif: '.gif', bmp: '.bmp',
+    avif: '.avif', heic: '.heic', heif: '.heif', tiff: '.tiff'
+};
+
+function exiftool(args) {
     return new Promise((resolve, reject) => {
-        const originalExt = path.extname(filePath).toLowerCase();
-        const fileDirectory = path.dirname(filePath);
-        const fileName = path.basename(filePath);
-        const baseNameWithoutExt = path.basename(fileName, originalExt);
-        const targetDir = outputFolder || fileDirectory;
-
-        console.log("start processing file:", filePath);
-
-        if (IMAGE_EXTENSIONS.has(originalExt)) {
-            const exiftoolPath = getBinPath('exiftool.exe');
-
-
-            const detectArgs = [
-                '-s3',
-                '-FileType',
-                filePath
-            ];
-
-            execFile(exiftoolPath, detectArgs, (detectError, stdout, stderr) => {
-                if (detectError) {
-                    console.error('ExifTool detection error:', detectError);
-                    return reject(detectError);
-                }
-
-                const detectedType = stdout.trim().toLowerCase();
-
-                console.log("Original extension:", originalExt);
-                console.log("Detected file type:", detectedType);
-
-                /*
-                 * Map ExifTool's FileType values to normal extensions.
-                 */
-                const typeToExtension = {
-                    jpeg: '.jpg',
-                    jpg: '.jpg',
-                    png: '.png',
-                    webp: '.webp',
-                    gif: '.gif',
-                    bmp: '.bmp',
-                    avif: '.avif',
-                    heic: '.heic',
-                    heif: '.heif'
-                };
-
-                const detectedExt = typeToExtension[detectedType];
-
-                if (!detectedExt) {
-                    return reject(
-                        new Error(
-                            `Unsupported or unknown image format: "${detectedType}" ` +
-                            `for file "${filePath}"`
-                        )
-                    );
-                }
-
-                /*
-                 * Let the user know if the extension doesn't match
-                 * the actual file format.
-                 */
-                if (originalExt !== detectedExt) {
-                    console.warn(
-                        `Extension mismatch detected: ${originalExt} -> ${detectedExt}`
-                    );
-                }
-
-                let outputPath;
-
-                if (outputFileName && outputFileName.trim() !== '') {
-                    let requestedName = outputFileName.trim();
-
-                    /*
-                     * Remove whatever extension the user supplied.
-                     * We'll add the REAL extension.
-                     */
-                    const requestedExt = path.extname(requestedName);
-
-                    if (requestedExt) {
-                        requestedName = requestedName.slice(
-                            0,
-                            -requestedExt.length
-                        );
-                    }
-
-                    outputPath = path.join(
-                        targetDir,
-                        `${requestedName}${detectedExt}`
-                    );
-                } else {
-                    outputPath = path.join(
-                        targetDir,
-                        `${baseNameWithoutExt}_clean${detectedExt}`
-                    );
-                }
-
-                console.log("Detected format:", detectedType);
-                console.log("Saving to:", outputPath);
-
-                try {
- 
-                    fs.copyFileSync(filePath, outputPath);
-                } catch (copyError) {
-                    console.error('Error copying image:', copyError);
-                    return reject(copyError);
-                }
-
-                const removeMetadataArgs = [
-                    '-all=',
-                    '-overwrite_original',
-                    '-m',
-                    outputPath
-                ];
-
-                execFile(
-                    exiftoolPath,
-                    removeMetadataArgs,
-                    (error, stdout, stderr) => {
-                        if (error) {
-                            console.error('ExifTool metadata error:', error);
-
-                            try {
-                                if (fs.existsSync(outputPath)) {
-                                    fs.unlinkSync(outputPath);
-                                }
-                            } catch (cleanupError) {
-                                console.error(
-                                    'Error cleaning up failed output:',
-                                    cleanupError
-                                );
-                            }
-
-                            return reject(error);
-                        }
-
-                        console.log(
-                            'Image metadata removed successfully'
-                        );
-
-                        resolve({
-                            success: true,
-                            inputPath: filePath,
-                            outputPath,
-                            originalExtension: originalExt,
-                            detectedExtension: detectedExt,
-                            detectedType
-                        });
-                    }
-                );
-            });
-
-
-        } else if (VIDEO_AUDIO_EXTENSIONS.has(originalExt)) {
-            const ffmpegPath = getBinPath('ffmpeg.exe');
-
-            let outputPath;
-
-            if (outputFileName && outputFileName.trim() !== '') {
-                const requestedName = outputFileName.trim();
-                const requestedExt = path.extname(requestedName);
-
-                if (requestedExt) {
-                    const nameWithoutExt = requestedName.slice(
-                        0,
-                        -requestedExt.length
-                    );
-
-                    outputPath = path.join(
-                        targetDir,
-                        `${nameWithoutExt}${originalExt}`
-                    );
-                } else {
-                    outputPath = path.join(
-                        targetDir,
-                        `${requestedName}${originalExt}`
-                    );
-                }
-            } else {
-                outputPath = path.join(
-                    targetDir,
-                    `${baseNameWithoutExt}_clean${originalExt}`
-                );
-            }
-
-            console.log("start processing file:", filePath);
-            console.log("saving to:", outputPath);
-
-            const args = [
-                '-i', filePath,
-                '-map', '0',
-                '-map_metadata', '-1',
-                '-map_chapters', '-1',
-                '-c', 'copy',
-                '-metadata', 'encoder=',
-                outputPath
-            ];
-
-            execFile(ffmpegPath, args, (error, stdout, stderr) => {
-                if (error) {
-                    console.error('FFmpeg error:', error);
-                    return reject(error);
-                }
-
-                console.log(
-                    'Video/audio metadata removed successfully'
-                );
-
-                resolve({
-                    success: true,
-                    inputPath: filePath,
-                    outputPath
-                });
-            });
-
-        } else {
-            reject(
-                new Error(`Unsupported file type: ${originalExt}`)
-            );
+        let exiftoolPath;
+        try {
+            exiftoolPath = getBinPath('exiftool');
+        } catch (error) {
+            return reject(error);
         }
+        execFile(exiftoolPath, args, { windowsHide: true }, (error, stdout, stderr) => {
+            if (error) return reject(new Error((stderr || error.message).toString().trim()));
+            resolve(stdout.toString());
+        });
     });
 }
 
+async function detectImageExtension(filePath) {
+    const sniffed = await sniffImageExtension(filePath);
+    if (sniffed) return sniffed;
+
+    const type = (await exiftool(['-s3', '-FileType', filePath])).trim().toLowerCase();
+    const ext = EXIFTOOL_TYPE_TO_EXTENSION[type];
+    if (!ext) throw new Error(`Unsupported or unknown image format: "${type || path.extname(filePath)}".`);
+    return ext;
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API                                                          */
+/* ------------------------------------------------------------------ */
+
+async function cleanImage(filePath, outputFolder, outputFileName) {
+    const extension = await detectImageExtension(filePath);
+    const outputPath = buildOutputPath({
+        inputPath: filePath, outputFolder, outputFileName, suffix: '_clean', extension
+    });
+
+    const sameFamily = (a, b) => a === b || (/^\.jpe?g$/.test(a) && /^\.jpe?g$/.test(b)) ||
+        (/^\.tiff?$/.test(a) && /^\.tiff?$/.test(b));
+
+    try {
+        if (extension === '.bmp') {
+            // BMP has no metadata blocks (and ExifTool can't write it) — a copy is already clean.
+            await fs.promises.copyFile(filePath, outputPath);
+        } else if (sameFamily(path.extname(filePath).toLowerCase(), extension)) {
+            // "-o" writes a new, stripped file in one pass (no copy-then-rewrite).
+            await exiftool(['-all=', '-m', '-o', outputPath, filePath]);
+        } else {
+            // Mislabeled file (e.g. WebP named .jpg): ExifTool goes by the extension,
+            // so give it a correctly named copy and clean that in place.
+            await fs.promises.copyFile(filePath, outputPath);
+            await exiftool(['-all=', '-m', '-overwrite_original', outputPath]);
+        }
+    } catch (error) {
+        fs.promises.unlink(outputPath).catch(() => {});
+        throw error;
+    } finally {
+        releaseOutputPath(outputPath);
+    }
+    return outputPath;
+}
+
+async function cleanVideoOrAudio(filePath, outputFolder, outputFileName, hooks) {
+    const outputPath = buildOutputPath({
+        inputPath: filePath,
+        outputFolder,
+        outputFileName,
+        suffix: '_clean',
+        extension: path.extname(filePath).toLowerCase()
+    });
+
+    const run = runFfmpeg([
+        '-i', filePath,
+        '-map', '0',
+        '-map_metadata', '-1',
+        '-map_chapters', '-1',
+        '-c', 'copy',
+        '-fflags', '+bitexact',
+        '-metadata', 'encoder=',
+        outputPath
+    ], { onProgress: hooks.onProgress });
+
+    hooks.registerCancel?.(run.cancel);
+
+    try {
+        await run.promise;
+    } catch (error) {
+        fs.promises.unlink(outputPath).catch(() => {});
+        throw error;
+    } finally {
+        releaseOutputPath(outputPath);
+    }
+    return outputPath;
+}
+
+/**
+ * Lossless metadata removal.
+ * Images: ExifTool. Video/audio: ffmpeg stream copy without metadata.
+ */
+async function removeMetaData(filePath, outputFolder, outputFileName, hooks = {}) {
+    const mediaType = getMediaType(filePath);
+    let outputPath;
+
+    if (mediaType === 'image') {
+        outputPath = await cleanImage(filePath, outputFolder, outputFileName);
+    } else if (mediaType === 'video' || mediaType === 'audio') {
+        outputPath = await cleanVideoOrAudio(filePath, outputFolder, outputFileName, hooks);
+    } else {
+        throw new Error(`Unsupported file type: ${path.extname(filePath)}`);
+    }
+
+    hooks.onProgress?.(1);
+    return { success: true, inputPath: filePath, outputPath };
+}
+
 module.exports = removeMetaData;
+module.exports.sniffImageExtension = sniffImageExtension;
