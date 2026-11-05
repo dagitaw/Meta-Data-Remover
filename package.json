@@ -1,16 +1,20 @@
 {
   "name": "meta-data-remover",
-  "version": "1.0.0",
-  "description": "Metadata removal application",
+  "version": "2.1.0",
+  "description": "Remove metadata, convert media and remove image backgrounds — all offline.",
   "main": "index.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "selftest": "node tools/selftest.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "dependencies": {
+    "onnxruntime-node": "^1.22.0"
+  },
   "devDependencies": {
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3"
@@ -28,8 +32,15 @@
       "scripts/**/*",
       "styles/**/*",
       "services/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "!node_modules/onnxruntime-node/bin/**/linux/**",
+      "!node_modules/onnxruntime-node/bin/**/darwin/**",
+      "!node_modules/onnxruntime-node/bin/**/arm64/**"
     ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ],
+    "npmRebuild": false,
     "extraResources": [
       {
         "from": "bin",

@@ -1,12 +1,13 @@
 /* App state: user settings (persisted), the file queue, and the conversion catalog. */
 
 export const DEFAULT_SETTINGS = Object.freeze({
-    mode: 'clean', // 'clean' | 'convert'
+    mode: 'clean', // 'clean' | 'convert' | 'background'
     stripMetadata: true,
     outputFolder: null,
     video: { format: 'mp4', codec: 'h264', quality: 'balanced', resolution: 'original', fps: 'original', audio: 'keep' },
     image: { format: 'jpg', quality: 85, size: 'original' },
-    audio: { format: 'mp3', quality: 'balanced' }
+    audio: { format: 'mp3', quality: 'balanced' },
+    bg: { model: 'isnet', format: 'png', background: 'transparent', color: '#1fb85a', trim: false }
 });
 
 const STORAGE_KEY = 'mdr-settings-v1';
@@ -21,7 +22,8 @@ function loadSettings() {
             ...saved,
             video: { ...defaults.video, ...saved.video },
             image: { ...defaults.image, ...saved.image },
-            audio: { ...defaults.audio, ...saved.audio }
+            audio: { ...defaults.audio, ...saved.audio },
+            bg: { ...defaults.bg, ...saved.bg }
         };
     } catch {
         return defaults;
@@ -31,6 +33,7 @@ function loadSettings() {
 export const state = {
     settings: loadSettings(),
     catalog: null,     // formats/codecs from the main process
+    models: [],        // background-removal models + download status from the main process
     items: [],         // queue: { id, path, name, size, type, status, progress, outputPath, error }
     processing: false
 };
@@ -86,3 +89,8 @@ export function requeue(item, { keepOutput = false } = {}) {
 }
 
 export const queuedTypes = () => new Set(state.items.map((i) => i.type));
+
+/** Can this file be processed in the current mode? (Background removal is images only.) */
+export const isEligible = (item, mode = state.settings.mode) => mode !== 'background' || item.type === 'image';
+
+export const selectedModel = () => state.models.find((m) => m.id === state.settings.bg.model) || null;

@@ -1,9 +1,9 @@
 /*
  * Runs the queue. Light jobs (images, audio, lossless metadata removal) run in
- * parallel; video re-encodes run one at a time because each one already uses
- * every CPU core (or the GPU) by itself.
+ * parallel; video re-encodes and background removal run one at a time because
+ * each one already uses every CPU core (or the GPU) by itself.
  */
-import { state, requeue } from './state.js';
+import { state, requeue, isEligible } from './state.js';
 
 const api = window.electronAPI;
 
@@ -13,7 +13,7 @@ const running = new Map(); // jobId -> item
 let cancelRequested = false;
 
 const jobIdOf = (item) => `job-${item.id}`;
-const isHeavy = (item, mode) => mode === 'convert' && item.type === 'video';
+const isHeavy = (item, mode) => mode === 'background' || (mode === 'convert' && item.type === 'video');
 
 /**
  * @param {object} hooks
@@ -25,14 +25,16 @@ const isHeavy = (item, mode) => mode === 'convert' && item.type === 'video';
 export async function processQueue(hooks) {
     if (state.processing || state.items.length === 0) return null;
 
-    // Everything already done -> run the whole list again; otherwise retry failures.
-    const allDone = state.items.every((i) => i.status === 'done');
-    for (const item of state.items) {
-        if (allDone || item.status === 'error' || item.status === 'cancelled') requeue(item);
-    }
-
     // Freeze settings for this run so edits mid-run don't mix outputs.
     const snapshot = structuredClone(state.settings);
+    const eligible = state.items.filter((i) => isEligible(i, snapshot.mode));
+    if (eligible.length === 0) return null;
+
+    // Everything already done -> run the whole list again; otherwise retry failures.
+    const allDone = eligible.every((i) => i.status === 'done');
+    for (const item of eligible) {
+        if (allDone || item.status === 'error' || item.status === 'cancelled') requeue(item);
+    }
     const outputFileName = hooks.getOutputFileName();
 
     state.processing = true;
@@ -51,14 +53,16 @@ export async function processQueue(hooks) {
                 stripMetadata: snapshot.stripMetadata,
                 video: snapshot.video,
                 image: snapshot.image,
-                audio: snapshot.audio
+                audio: snapshot.audio,
+                bg: snapshot.bg
             },
             outputFolder: snapshot.outputFolder,
             outputFileName
         });
 
         if (result.success) {
-            Object.assign(item, { status: 'done', progress: 1, outputPath: result.outputPath });
+            const { outputPath, width, height, model, ms } = result;
+            Object.assign(item, { status: 'done', progress: 1, outputPath, width, height, model, ms, resultMode: snapshot.mode });
         } else if (result.cancelled) {
             Object.assign(item, { status: 'cancelled', progress: 0 });
         } else {
@@ -75,7 +79,8 @@ export async function processQueue(hooks) {
                 while (running.size < MAX_PARALLEL) {
                     // Files added mid-run are picked up here too.
                     const next = state.items.find((i) =>
-                        i.status === 'queued' && !running.has(jobIdOf(i)) && !(heavyBusy && isHeavy(i, snapshot.mode)));
+                        i.status === 'queued' && isEligible(i, snapshot.mode) && !running.has(jobIdOf(i))
+                        && !(heavyBusy && isHeavy(i, snapshot.mode)));
                     if (!next) break;
 
                     heavyBusy ||= isHeavy(next, snapshot.mode);

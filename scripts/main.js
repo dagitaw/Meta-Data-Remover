@@ -6,15 +6,21 @@
  *   queue-view.js    file list rows, thumbnails, progress
  *   settings-view.js side panel, mode switch, footer buttons
  *   processor.js     runs jobs (parallel where it helps)
+ *   bg-models.js     background-removal model picker + downloads
+ *   preview.js       before / after preview of background removal
  *   dialog.js        result dialog
+ *   updates.js       GitHub update check
  */
-import { state, addFiles, clearItems } from './state.js';
+import { state, addFiles, clearItems, requeue } from './state.js';
 import { $, toast, plural } from './utils.js';
 import { initDropzone, browseForFiles } from './dropzone.js';
-import { syncQueue, updateRow, refreshTargets, refreshAllRows, onQueueChanged } from './queue-view.js';
+import { syncQueue, updateRow, refreshTargets, refreshAllRows, onQueueChanged, onPreviewRequested } from './queue-view.js';
 import { initSettingsView, applyCatalog, renderSettings, getOutputFileName } from './settings-view.js';
 import { processQueue, cancelQueue, listenForProgress } from './processor.js';
 import { showAlert } from './dialog.js';
+import { initUpdates } from './updates.js';
+import { initBgModels, openModelMenu, closeModelMenu } from './bg-models.js';
+import { initPreview, openPreview } from './preview.js';
 
 const api = window.electronAPI;
 
@@ -66,9 +72,13 @@ const browse = () => browseForFiles(handleNewFiles);
 function showSummary({ done, failed, cancelled }) {
     if (!done.length && !failed.length) return;
 
-    const verb = state.settings.mode === 'clean' ? 'cleaned' : 'converted';
+    const TITLES = {
+        clean: (n) => `${plural(n, 'file')} cleaned`,
+        convert: (n) => `${plural(n, 'file')} converted`,
+        background: (n) => `Background removed from ${plural(n, 'image')}`
+    };
     let type = 'success';
-    let title = `${plural(done.length, 'file')} ${verb}`;
+    let title = (TITLES[state.settings.mode] || TITLES.clean)(done.length);
     let message = state.settings.outputFolder
         ? `Saved to ${state.settings.outputFolder}`
         : 'Saved next to the original files.';
@@ -90,6 +100,7 @@ async function start() {
     const result = await processQueue({
         onItemUpdate: updateRow,
         onStateChange: () => {
+            closeModelMenu();
             renderSettings();
             refreshAllRows(); // show/hide Retry buttons
         },
@@ -104,12 +115,22 @@ initDropzone(handleNewFiles);
 onQueueChanged(onQueueEdited);
 listenForProgress(updateRow);
 
-initSettingsView(({ affectsQueue }) => {
+function onSettingsChanged({ affectsQueue = false } = {}) {
     renderSettings();
     if (affectsQueue) {
         refreshTargets();
         refreshAllRows(); // mode switch re-queues items
     }
+}
+
+initSettingsView(onSettingsChanged);
+onPreviewRequested(openPreview);
+
+// "Try another model" from the preview: queue that image again and open the model list.
+initPreview((item) => {
+    requeue(item);
+    onQueueEdited();
+    openModelMenu();
 });
 
 $('selectFilesButton').addEventListener('click', browse);
@@ -127,6 +148,8 @@ $('cancelButton').addEventListener('click', cancelQueue);
 
 renderLayout();
 renderSettings();
+initUpdates();
+initBgModels(onSettingsChanged).catch((error) => console.error('Could not load models:', error));
 
 try {
     state.catalog = await api.getCatalog();

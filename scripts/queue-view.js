@@ -2,7 +2,7 @@
  * File list. Each row is built once and then patched in place, so progress
  * ticks and settings changes never rebuild the list or reload thumbnails.
  */
-import { state, removeItem, requeue } from './state.js';
+import { state, removeItem, requeue, isEligible } from './state.js';
 import { $, el, icon, iconButton, formatBytes, formatDuration, plural, fileNameOf, toFileUrl } from './utils.js';
 
 const api = window.electronAPI;
@@ -13,11 +13,19 @@ const summary = $('queueSummary');
 const rows = new Map();
 
 let onChange = () => {};
+let onPreview = () => {};
 
 /** Called whenever the user edits the list from a row (remove / retry). */
 export function onQueueChanged(callback) {
     onChange = callback;
 }
+
+/** Called when the user opens a background-removal result. */
+export function onPreviewRequested(callback) {
+    onPreview = callback;
+}
+
+const hasPreview = (item) => item.status === 'done' && item.resultMode === 'background' && item.outputPath;
 
 /* ---------------- Thumbnails (lazy) ---------------- */
 
@@ -97,9 +105,17 @@ function captureVideoFrame(thumb, url) {
 
 /* ---------------- Row text ---------------- */
 
+const BACKGROUND_LABELS = { transparent: 'Transparent', white: 'White background', color: 'Colour background' };
+
 function describeTarget(item) {
     const { settings, catalog } = state;
     if (settings.mode === 'clean') return 'Remove metadata';
+    if (settings.mode === 'background') {
+        if (!isEligible(item)) return '';
+        const model = state.models.find((m) => m.id === settings.bg.model);
+        const format = settings.bg.format === 'webp' ? 'WebP' : 'PNG';
+        return `→ ${BACKGROUND_LABELS[settings.bg.background] || 'Transparent'} ${format}${model ? ` · ${model.label}` : ''}`;
+    }
     if (!catalog) return '';
 
     const shortLabel = (label) => label.split(/[ (]/)[0];
@@ -121,6 +137,7 @@ function describeTarget(item) {
 }
 
 function statusText(item) {
+    if (item.status === 'queued' && !isEligible(item)) return 'Skipped — background removal works on images only';
     switch (item.status) {
         case 'processing': return item.progress > 0 ? `Processing… ${Math.round(item.progress * 100)}%` : 'Processing…';
         case 'done': return `Saved as ${item.outputPath ? fileNameOf(item.outputPath) : ''}`;
@@ -159,7 +176,9 @@ function createRow(item) {
     const actions = el('div', 'item-actions');
     li.append(thumb, main, actions);
 
-    const row = { li, target, bar, progress, status, actions, renderedStatus: null };
+    thumb.addEventListener('click', () => { if (hasPreview(item)) onPreview(item); });
+
+    const row = { li, thumb, target, bar, progress, status, actions, renderedStatus: null, result: null };
     rows.set(item.id, row);
     return row;
 }
@@ -167,6 +186,9 @@ function createRow(item) {
 function renderActions(row, item) {
     const buttons = [];
 
+    if (hasPreview(item)) {
+        buttons.push(iconButton('eye', 'Preview before / after', () => onPreview(item)));
+    }
     if (item.status === 'done' && item.outputPath) {
         buttons.push(iconButton('folder', 'Show in folder', () => api.showInFolder(item.outputPath)));
     }
@@ -189,13 +211,35 @@ export function updateRow(item) {
     row.progress.classList.toggle('indeterminate', item.status === 'processing' && item.progress === 0);
     row.status.textContent = statusText(item);
 
-    // Status changes are rare; only then touch the class and buttons.
-    const statusKey = `${item.status}|${state.processing}`;
+    // Status changes are rare; only then touch the class, buttons and result thumbnail.
+    const eligible = isEligible(item);
+    const statusKey = `${item.status}|${state.processing}|${eligible}|${item.outputPath}`;
     if (row.renderedStatus !== statusKey) {
-        row.li.className = `item is-${item.status}`;
+        row.li.className = `item is-${item.status}${eligible ? '' : ' is-skipped'}`;
         renderActions(row, item);
+        renderResultThumb(row, item);
         row.renderedStatus = statusKey;
     }
+}
+
+/** Show the cut-out (on a checkerboard) over the thumbnail once background removal is done. */
+function renderResultThumb(row, item) {
+    const show = hasPreview(item);
+    row.thumb.classList.toggle('is-clickable', Boolean(show));
+    if (!show) {
+        row.result?.remove();
+        row.result = null;
+        return;
+    }
+    if (!row.result) {
+        row.result = el('div', 'thumb-result checker');
+        row.thumb.appendChild(row.result);
+    }
+    const img = new Image();
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = `${toFileUrl(item.outputPath)}?v=${Date.now()}`;
+    row.result.replaceChildren(img);
 }
 
 /** Update every row's "→ MP4 · H.264" label after a settings change. */

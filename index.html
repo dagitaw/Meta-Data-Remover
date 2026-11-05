@@ -29,9 +29,18 @@
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z"/></svg>
                 Convert files
             </button>
+            <button type="button" role="tab" data-mode="background">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 3h4v2H5v2H3V3Zm14 0h4v4h-2V5h-2V3ZM3 17h2v2h2v2H3v-4Zm16 2v-2h2v4h-4v-2h2ZM9 3h2v2H9V3Zm4 0h2v2h-2V3ZM3 9h2v2H3V9Zm0 4h2v2H3v-2Zm6 6h2v2H9v-2Zm4 0h2v2h-2v-2Zm6-10h2v2h-2V9Zm0 4h2v2h-2v-2ZM12 7a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm-5 10c0-2.2 2.2-3.5 5-3.5s5 1.3 5 3.5v.5H7V17Z"/></svg>
+                Remove background
+            </button>
         </div>
 
         <div class="topbar-actions">
+            <button id="checkUpdatesButton" class="btn btn-text btn-sm update-button" type="button" title="Check for updates">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 4V1L8 5l4 4V6a6 6 0 0 1 6 6 6 6 0 0 1-.7 2.8l1.46 1.46A8 8 0 0 0 20 12a8 8 0 0 0-8-8Zm0 14a6 6 0 0 1-6-6c0-1 .25-1.97.7-2.8L5.24 7.74A8 8 0 0 0 4 12a8 8 0 0 0 8 8v3l4-4-4-4v3Z"/></svg>
+                <span id="appVersion">Updates</span>
+                <span class="update-dot" aria-hidden="true"></span>
+            </button>
             <button id="addFilesButton" class="btn btn-secondary btn-sm hidden" type="button">
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
                 Add files
@@ -177,6 +186,67 @@
                             </label>
                         </div>
 
+                        <!-- REMOVE BACKGROUND SETTINGS -->
+                        <div id="bgSettings" class="hidden">
+                            <section class="group">
+                                <h3 class="group-title">Model</h3>
+
+                                <button id="modelButton" class="model-button" type="button" aria-haspopup="listbox" aria-expanded="false">
+                                    <span id="modelButtonLabel">No model downloaded yet</span>
+                                    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>
+                                </button>
+
+                                <div id="modelCallout" class="model-callout hidden">
+                                    <div class="model-callout-text">
+                                        <strong>Download a model to start</strong>
+                                        <span>ISNet is recommended — clean cut-outs on people, products and objects.</span>
+                                    </div>
+                                    <button id="modelCalloutDownload" class="btn btn-primary" type="button">Download ISNet</button>
+                                    <button id="modelCalloutMore" class="btn btn-text btn-sm" type="button">See all models</button>
+                                </div>
+
+                                <div id="modelDownloads" class="model-downloads hidden">
+                                    <div class="model-downloads-head">
+                                        <strong>Downloading models</strong>
+                                        <span id="modelDownloadsCount" class="muted"></span>
+                                    </div>
+                                    <div id="modelDownloadsList" class="model-downloads-list"></div>
+                                    <div class="model-downloads-foot">
+                                        <span class="hint">Keep working — downloads continue in the background.</span>
+                                        <button id="modelDownloadsCancel" class="btn btn-secondary btn-xs" type="button">Cancel</button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="group">
+                                <h3 class="group-title">Result</h3>
+
+                                <div class="field">
+                                    <span class="label">Format</span>
+                                    <div class="segmented segmented-sm" id="bgFormat">
+                                        <button type="button" data-value="png">PNG</button>
+                                        <button type="button" data-value="webp">WebP (smaller)</button>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <span class="label">Background</span>
+                                    <div class="segmented segmented-sm" id="bgBackground">
+                                        <button type="button" data-value="transparent">Transparent</button>
+                                        <button type="button" data-value="white">White</button>
+                                        <button type="button" data-value="color"><span class="color-dot" id="bgColorDot"></span>Colour</button>
+                                    </div>
+                                    <input type="color" id="bgColor" class="visually-hidden" value="#1fb85a" aria-label="Background colour">
+                                </div>
+
+                                <label class="toggle">
+                                    <input type="checkbox" id="bgTrim">
+                                    <span class="switch" aria-hidden="true"></span>
+                                    <span>Trim empty space around the subject</span>
+                                </label>
+                            </section>
+                        </div>
+
                         <!-- OUTPUT -->
                         <section class="group">
                             <h3 class="group-title">Output</h3>
@@ -206,6 +276,7 @@
                 <div class="panel-footer">
                     <button id="startButton" class="btn btn-primary btn-block" type="button">Remove metadata</button>
                     <button id="cancelButton" class="btn btn-secondary btn-block hidden" type="button">Cancel</button>
+                    <span id="startHint" class="start-hint hidden"></span>
                 </div>
             </aside>
         </section>
@@ -220,6 +291,84 @@
         </div>
         <h2>Drop files to add them</h2>
         <p>Videos, images, audio — or whole folders</p>
+    </div>
+</div>
+
+<!-- ============ MODEL MENU (background removal) ============ -->
+<div id="modelMenu" class="model-menu hidden" role="dialog" aria-label="Background removal models">
+    <div class="model-menu-head">
+        <strong>Background removal models</strong>
+        <span id="modelMenuSummary" class="muted"></span>
+    </div>
+    <div id="modelMenuList" class="model-menu-list" role="listbox"></div>
+    <div class="model-menu-foot">
+        <span class="hint">Models are stored once on this computer and work offline after downloading.</span>
+        <button id="modelDownloadAll" class="btn btn-primary btn-sm" type="button">Download all</button>
+    </div>
+</div>
+
+<!-- ============ BEFORE / AFTER PREVIEW ============ -->
+<div id="previewOverlay" class="alert-overlay">
+    <div class="alert-window preview-window" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+        <div class="preview-head">
+            <div>
+                <h2 id="previewTitle">Preview</h2>
+                <span id="previewInfo" class="muted"></span>
+            </div>
+            <button id="previewClose" class="icon-btn" type="button" aria-label="Close preview">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+            </button>
+        </div>
+
+        <div id="previewStage" class="preview-stage">
+            <img id="previewBefore" class="preview-img" alt="Original image">
+            <div id="previewAfterLayer" class="preview-after checker">
+                <img id="previewAfter" class="preview-img" alt="Image with background removed">
+            </div>
+            <div id="previewDivider" class="preview-divider" aria-hidden="true"><span></span></div>
+            <span class="preview-tag preview-tag-before">BEFORE</span>
+            <span class="preview-tag preview-tag-after">AFTER</span>
+            <input id="previewSlider" class="preview-slider" type="range" min="0" max="100" value="50" aria-label="Drag to compare before and after">
+        </div>
+
+        <div class="preview-foot">
+            <div class="preview-swatches" id="previewSwatches">
+                <span class="muted">Check edges on</span>
+                <button type="button" data-bg="checker" class="swatch checker active" aria-label="Checkerboard background"></button>
+                <button type="button" data-bg="#ffffff" class="swatch" style="background:#ffffff" aria-label="White background"></button>
+                <button type="button" data-bg="#000000" class="swatch" style="background:#000000" aria-label="Black background"></button>
+                <button type="button" data-bg="#1fb85a" class="swatch" style="background:#1fb85a" aria-label="Green background"></button>
+            </div>
+            <div class="preview-actions">
+                <button id="previewRetry" class="btn btn-text" type="button">Try another model</button>
+                <button id="previewShow" class="btn btn-secondary" type="button">Show in folder</button>
+                <button id="previewDone" class="btn btn-primary" type="button">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============ UPDATE DIALOG ============ -->
+<div id="updateOverlay" class="alert-overlay">
+    <div class="alert-window update-window" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+        <div id="updateIcon" class="alert-icon update-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M5 20h14v-2H5v2Zm7-16-5.5 5.5 1.42 1.41L11 7.83V16h2V7.83l3.08 3.08 1.42-1.41L12 4Z"/></svg>
+        </div>
+        <h2 id="updateTitle">Update available</h2>
+        <p id="updateSubtitle" class="update-subtitle"></p>
+
+        <div id="updateNotes" class="update-notes hidden"></div>
+
+        <div id="updateProgress" class="update-progress hidden">
+            <div class="progress"><div class="bar" id="updateProgressBar"></div></div>
+            <span id="updateProgressText">Downloading…</span>
+        </div>
+
+        <div class="alert-actions update-actions">
+            <button id="updateSkipButton" class="btn btn-text" type="button">Skip this version</button>
+            <button id="updateSecondaryButton" class="btn btn-secondary" type="button">Later</button>
+            <button id="updatePrimaryButton" class="btn btn-primary" type="button">Update now</button>
+        </div>
     </div>
 </div>
 

@@ -1,5 +1,5 @@
 /* Right-hand settings panel, the top-bar mode switch and the footer buttons. */
-import { state, saveSettings, requeue, queuedTypes } from './state.js';
+import { state, saveSettings, requeue, queuedTypes, isEligible, selectedModel } from './state.js';
 import { $, plural } from './utils.js';
 
 const api = window.electronAPI;
@@ -38,6 +38,13 @@ const ui = {
 
     stripMetadata: $('stripMetadata'),
 
+    bgSettings: $('bgSettings'),
+    bgFormat: $('bgFormat'),
+    bgBackground: $('bgBackground'),
+    bgColor: $('bgColor'),
+    bgColorDot: $('bgColorDot'),
+    bgTrim: $('bgTrim'),
+
     outputFolderLabel: $('outputFolderLabel'),
     chooseOutputButton: $('chooseOutputButton'),
     resetOutputButton: $('resetOutputButton'),
@@ -46,6 +53,7 @@ const ui = {
 
     startButton: $('startButton'),
     cancelButton: $('cancelButton'),
+    startHint: $('startHint'),
     clearButton: $('clearButton'),
     engineInfo: $('engineInfo')
 };
@@ -64,6 +72,14 @@ const MODE_TEXT = {
         description: 'Change format, codec, resolution or quality. Videos, images and audio each use their own settings below.',
         verb: 'Convert',
         suffix: '_converted'
+    },
+    background: {
+        heroTitle: 'Drag and drop images to remove the background',
+        heroSubtitle: 'Cuts out the subject and saves a transparent PNG or WebP. Runs on this computer.',
+        description: 'Cuts out the subject and saves it with a transparent background. Runs on this computer — a model is downloaded once and reused.',
+        verb: 'Remove background',
+        suffix: '_nobg',
+        noun: 'image'
     }
 };
 
@@ -174,6 +190,28 @@ function renderConvertSettings() {
     ui.stripMetadata.checked = settings.stripMetadata;
 }
 
+function renderBackgroundSettings() {
+    const { bg } = state.settings;
+    setSegmented(ui.bgFormat, bg.format);
+    setSegmented(ui.bgBackground, bg.background);
+    ui.bgColor.value = bg.color;
+    ui.bgColorDot.style.background = bg.color;
+    ui.bgTrim.checked = bg.trim;
+}
+
+/** Why the Start button is disabled in background mode (or '' when it isn't). */
+function backgroundBlocker() {
+    const model = selectedModel();
+    if (!model || !model.downloaded) {
+        if (!model?.state) return 'Download a model first';
+        const ready = state.models.some((m) => m.downloaded);
+        return ready
+            ? `${model.label} is still downloading — pick a ready model to start now`
+            : `Waiting for ${model.label} to finish downloading`;
+    }
+    return '';
+}
+
 export function renderSettings() {
     const { settings, items, processing, catalog } = state;
     const text = MODE_TEXT[settings.mode];
@@ -185,7 +223,9 @@ export function renderSettings() {
     ui.heroSubtitle.textContent = text.heroSubtitle;
     ui.modeDescription.textContent = text.description;
     ui.convertSettings.classList.toggle('hidden', settings.mode !== 'convert');
+    ui.bgSettings.classList.toggle('hidden', settings.mode !== 'background');
     if (catalog && settings.mode === 'convert') renderConvertSettings();
+    if (settings.mode === 'background') renderBackgroundSettings();
 
     // Output
     ui.outputFolderLabel.textContent = settings.outputFolder || 'Same folder as original';
@@ -201,9 +241,17 @@ export function renderSettings() {
         : `Multiple files: each keeps its name + "${text.suffix}".`;
 
     // Footer
-    const count = items.filter((i) => i.status !== 'done').length || items.length;
-    ui.startButton.textContent = count > 1 ? `${text.verb} · ${plural(count, 'file')}` : text.verb;
-    ui.startButton.disabled = processing || items.length === 0;
+    const eligible = items.filter((i) => isEligible(i));
+    const count = eligible.filter((i) => i.status !== 'done').length || eligible.length;
+    const noun = text.noun || 'file';
+    ui.startButton.textContent = count > 1 ? `${text.verb} · ${plural(count, noun)}` : text.verb;
+
+    const blocker = eligible.length === 0 && items.length > 0
+        ? 'Background removal works on images only'
+        : settings.mode === 'background' ? backgroundBlocker() : '';
+    ui.startButton.disabled = processing || eligible.length === 0 || Boolean(blocker);
+    ui.startHint.textContent = blocker;
+    ui.startHint.classList.toggle('hidden', processing || !blocker);
     ui.startButton.classList.toggle('hidden', processing);
     ui.cancelButton.classList.toggle('hidden', !processing);
     ui.settingsFieldset.disabled = processing;
@@ -236,7 +284,9 @@ const SELECT_BINDINGS = [
 // segmented control -> settings[group][key]
 const SEGMENTED_BINDINGS = [
     ['videoQuality', 'video', 'quality'],
-    ['audioQuality', 'audio', 'quality']
+    ['audioQuality', 'audio', 'quality'],
+    ['bgFormat', 'bg', 'format'],
+    ['bgBackground', 'bg', 'background']
 ];
 
 function bindEvents() {
@@ -262,8 +312,19 @@ function bindEvents() {
             if (!button) return;
             state.settings[group][key] = button.dataset.value;
             changed();
+            if (id === 'bgBackground' && button.dataset.value === 'color') openColorPicker();
         });
     }
+
+    ui.bgColor.addEventListener('input', () => {
+        state.settings.bg.color = ui.bgColor.value;
+        ui.bgColorDot.style.background = ui.bgColor.value;
+    });
+    ui.bgColor.addEventListener('change', () => changed({ affectsQueue: false }));
+    ui.bgTrim.addEventListener('change', () => {
+        state.settings.bg.trim = ui.bgTrim.checked;
+        saveSettings();
+    });
 
     ui.imageQuality.addEventListener('input', () => {
         state.settings.image.quality = Number(ui.imageQuality.value);
@@ -287,6 +348,10 @@ function bindEvents() {
         state.settings.outputFolder = null;
         changed({ affectsQueue: false });
     });
+}
+
+function openColorPicker() {
+    try { ui.bgColor.showPicker(); } catch { ui.bgColor.click(); }
 }
 
 /* ---------------- Init ---------------- */
